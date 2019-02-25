@@ -1,0 +1,426 @@
+---
+output:
+  html_document: default
+  pdf_document: default
+---
+TITLE by YOUR_NAME_HERE
+========================================================
+```{r global_options, include=FALSE}
+knitr::opts_chunk$set(message=FALSE,warning=FALSE,echo=FALSE)
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, packages}
+library(gridExtra)
+library(ggplot2)
+library(dplyr)
+```
+### 加载数据前的数据整理
+### 该处有三个数据集，分析三个数据的关系并结合将要完成的EDA，对数据集做以下整理：
+### LP是LC数据集的还款计划和还款记录，在EDA过程中并不会涉及到这部分，故弃用LP的数据
+### LCIS数据集是客户投标数据的展示，和LC比对后，决定删去LCIS的客户投资部分（22-37列）和借款日期,总成本金
+### 删除LCIS数据集中存在NULL 的行,并做去重处理
+### 将LC数据集中的性别列转换为男和女(因数据说明中并未明确说明1代表的具体性别,故按照1代表男性处理)
+```{r}
+# 加载数据
+lc = read.csv('LC.csv')
+lcis = read.csv('LCIS.csv')
+```
+
+```{r}
+# 将lcis和lc数据集合并
+paipai = merge(lc,lcis,all=TRUE)
+```
+
+```{r}
+# 合并数据后去重
+paipaidai = paipai[!duplicated(paipai$ListingId),]
+```
+```{r}
+# 将数据集导出做进一步处理
+# 受限于本人R数据处理水平,导出后,使用了Python将六种认证方式做了统计,成功认证记为1,不成功记为0,统计了总成功数
+write.csv(paipaidai,'paipaidai_new_t.csv')
+```
+```{r}
+# 重新读取数据集
+paipaidai_new = read.csv('paipaidai_new.csv')
+```
+
+## 单变量绘图选择
+```{r}
+# 1. 借款期限分布情况如何?
+ggplot(aes(x=借款期限),data= paipaidai_new)+geom_bar()+
+  scale_x_continuous(breaks = 1:24)
+```
+
+--由图形可以知晓,借款期限最多的就是12个月或者6个月,说明此此平台借款人主要以一年内的短期借款为主
+```{r}
+# 2.初始评级的分布情况如何?
+ggplot(aes(x=初始评级),data=paipaidai_new)+geom_bar()
+```
+
+-- 由图形可以知晓: 信用等级主要以C 和D 两个评级为主. 安全标比赔标的数量少很多
+```{r}
+# 3.借款类型,是否首标,年龄分布以及性别分布情况如何呢?
+p1 = ggplot(aes(x=借款类型),data=paipaidai_new)+geom_bar()
+p2 = ggplot(aes(x=年龄),data=paipaidai_new)+geom_bar()
+p3 = ggplot(aes(x=性别),data=paipaidai_new)+geom_bar()
+p4 = ggplot(aes(x= 是否首标),data=paipaidai_new)+geom_bar()
+grid.arrange(p1,p2,p3,p4)
+```
+
+--由上图可以知晓: 借款类型最多的是APP闪电和普通,年龄分布来看,大部分都集中在20到30之间的年轻人
+
+--性别分布来看男性占比近似女性的两倍,并且多数都是首次借款
+```{r}
+# 4.历史成功借款次数,历史成功借款金额,历史正常还款期数,历史逾期还款期数的情况?
+p5 = ggplot(aes(x=历史成功借款次数),data=paipaidai_new)+geom_bar()+
+  scale_x_continuous(limits = c(0,20))
+p6 = ggplot(aes(x=历史正常还款期数),data=paipaidai_new)+geom_bar()+
+    scale_x_continuous(limits = c(0,30))
+p7 = ggplot(aes(x=历史逾期还款期数),data=paipaidai_new)+geom_bar()+
+    scale_x_continuous(limits = c(0,20))
+grid.arrange(p5,p6,p7)
+```
+
+--由上图可以知晓:历史逾期还款期数0次站了绝对的比例,说明多数借款人都是准时还款的
+--历史成功借款次数也由0次向15次逐渐递减,历史正常还款期数,由1次到30次,各次别分布相对差异不大
+```{r}
+# 查看借款金额的分布情况
+summary(paipaidai_new$借款金额)
+```
+
+--由上诉可以看出样本数据集中借款金额最小的是100,最大的是500000,平均值为5007,所以在此定义函数,将低于3500借款金额的标记为'low',3500到5007之间的标记为'median',高于5007的,标记为'hight'
+```{r}
+transfer = function(x){
+  if (x<=3500){
+    result = c('low')
+  } else if (x<=5007){
+    result = c('median')
+  } else if (x>5007){
+    result = c('hight')
+  }
+  return(result)
+}
+```
+```{r}
+# 将自定义的函数运用到借款金额列
+paipaidai_new$grade = mapply(transfer,paipaidai_new$借款金额)
+```
+```{r}
+# 5. 根据定义的grade绘制图形
+ggplot(aes(x=grade),data = paipaidai_new)+geom_bar()
+```
+
+--由此可见,借款金额频率最高的是低于3500,其次是3500到5007之间,最少的是高于5007的部分
+
+--但是高于5007的部分相对于中间值,还是有一定的数据量
+```{r}
+# 6.在六种认证方面,表现如何呢?
+p8= ggplot(aes(手机认证),data=paipaidai_new)+geom_bar()
+p9= ggplot(aes(户口认证),data=paipaidai_new)+geom_bar()
+p10= ggplot(aes(学历认证),data=paipaidai_new)+geom_bar()
+p11= ggplot(aes(视频认证),data=paipaidai_new)+geom_bar()
+p12= ggplot(aes(征信认证),data=paipaidai_new)+geom_bar()
+p13= ggplot(aes(淘宝认证),data=paipaidai_new)+geom_bar()
+grid.arrange(p8,p9,p10,p11,p12,p13)
+```
+
+--由上线六个图形可以看出,手机和学历认证相对认证成功的较多,但是数量仍没有超过未成功认证的数量,而其他的四种认证方式,特别是淘宝认证,成功认证的数量和未成功认证的数量对比特别大
+```{r}
+# 7.成功认证数量
+ggplot(aes(认证成功数量),data=paipaidai_new) +geom_bar(breaks=seq(0,6,1))
+
+```
+
+--本图是上面六个图形的汇总图,从汇总图可以看出,全都没有认证成功的人数仅次于认证成功一次的数量,说明多少借款人都是认证未成功或者认证成功的种类很少
+
+## 单变量分析
+
+#### 数据集结构是什么？
+--整个数据集共390147条数据和19个字段
+
+#### 数据集内感兴趣的主要特性有哪些？
+--从单一变量的分析来看,最感兴趣的是借款金额的多少于什么因素有关
+
+#### 数据集内那些特征可以帮助探索兴趣特点？
+--初始评级的高低,是否首标,年龄大小以及历史成功借款次数可以帮助我探究借款金额多少的关系
+
+#### 根据数据集内已有变量，是否需要创建新变量？
+--根据数据集中借款金额的多少进行了等级划分,新添加了grade变量列
+
+#### 是否对数据进行了一些操作，如清洁、调整或改变数据的形式？
+-- 在开始探究之前,已经对lcis和lc数据集进行了数据清洁以及调整
+
+
+## 双变量绘图选择
+```{r}
+# 在相同借款期限内,借款金额的多少与那些因素有关呢?
+# 在单变量分析中得出,借款期限在12个月的数量占有绝对的数量优势,所以这里选取的期限的12个月和6个月作为样本
+dai_12 = paipaidai_new[which(paipaidai_new$借款期限==12),]
+dai_6 = paipaidai_new[which(paipaidai_new$借款期限==6),]
+```
+```{r}
+# 8.在相同期限内,借款金额与初始评级是怎样的关系呢?
+x_12 = ordered(dai_12$初始评级,levels=c('A','B','C','D','E','F','AA','AAA'))
+x_6 = ordered(dai_6$初始评级,levels=c('A','B','C','D','E','F','AA','AAA'))
+p1 = ggplot(aes(x=x_12,y=借款金额),data=dai_12)+
+  geom_jitter(alpha=0.1)+
+  geom_boxplot(alpha=0.8)+
+  ylim(0,20000)+
+  labs(x='初始评级')+
+  labs(title='12-month loan amount and rating relationship',y='借款金额(RMB)')
+  
+p2 = ggplot(aes(x=x_6,y=借款金额),data=dai_6)+
+  geom_jitter(alpha=0.1)+
+  geom_boxplot(alpha=0.8)+
+  ylim(0,20000)+
+  labs(x='初始评级')+
+  labs(title='6-month loan amount and rating relationship',y='借款金额(RMB)')
+
+grid.arrange(p1,p2)
+```
+
+--由图形可以知晓,随着信用等级A-F的变化,对于借款金额的影响大体上是越来越小的,就是信用等级越低,所能借到的金额越低
+```{r}
+# 9.首标对于借款金额的影响又是如何的呢?
+p3 = ggplot(aes(x=是否首标,y=借款金额),data=dai_12)+
+  geom_jitter(alpha=0.1)+
+  geom_boxplot(alpha=0.7)+
+  ylim(0,20000)+
+  labs(title='12-month loan amount and header relationship',y='借款金额(RMB)')
+  
+  
+p4 = ggplot(aes(x=是否首标,y=借款金额),data=dai_6)+
+  geom_jitter(alpha=0.1)+
+  geom_boxplot(alpha=0.7)+
+  ylim(0,20000)+
+  labs(title='6-month loan amount and header relationship',y='借款金额(RMB)')
+  
+grid.arrange(p3,p4)
+```
+
+--从12个月或6个月两个图形可以看出,是否是首次借款对于借款金额的多少几乎没有影响
+```{r}
+# 10.历史成功借款次数以及历史逾期次数是否会对借款多少有影响呢?
+p5 = ggplot(aes(x=历史成功借款次数,y=借款金额),data=dai_12)+
+  geom_jitter(alpha=0.5)+
+  ylim(1,20000)+xlim(0,100)+
+  geom_smooth()+
+  labs(title='12-month loan amount and success times
+relationship',y='借款金额(RMB)')
+  
+p6 = ggplot(aes(x=历史成功借款次数,y=借款金额),data=dai_6)+
+  geom_jitter(alpha=0.5)+
+  ylim(1,20000)+xlim(0,100)+
+  geom_smooth()+
+ labs(title='6-month loan amount and success times
+relationship',y='借款金额(RMB)')
+  
+p7 = ggplot(aes(x=历史逾期还款期数,y=借款金额),data=dai_12)+
+  geom_jitter(alpha=0.5)+
+  ylim(1,20000)+xlim(0,50)+
+  geom_smooth()+
+  labs(title='12-month loan amount and overdue
+relationship',y='借款金额(RMB)')
+p8 = ggplot(aes(x=历史逾期还款期数,y=借款金额),data=dai_12)+
+  geom_jitter(alpha=0.5)+
+  ylim(1,20000)+
+  xlim(0,50)+
+  geom_smooth()+
+  labs(title='6-month loan amount and overdue
+relationship',y='借款金额(RMB)')
+grid.arrange(p5,p6,p7,p8)
+```
+
+--由图形可以知晓,历史成功借款次数以及历史逾期还款期数对于借款金额的影响并不明显
+```{r}
+# 11. 年龄的大小又会对于借款金额多少有什么影响呢?
+
+age = group_by(dai_12,年龄)
+  summarise(age,
+            money_mean = mean(借款金额),
+            money_median = median(借款金额),
+            n=n()) 
+  arrange(age)
+ggplot(aes(年龄,借款金额),data=age)+
+  geom_jitter(alpha=0.3)+
+  ylim(0,20000)+
+  labs(title='12-month loan amount and age relationship',y='借款金额(RMB)')
+```
+```{r}
+age_6 = group_by(dai_6,年龄)
+  summarise(age,
+            money_mean = mean(借款金额),
+            money_median = median(借款金额),
+            n=n()) 
+  arrange(age)
+ggplot(aes(年龄,借款金额),data=age_6)+
+  geom_jitter(alpha=0.2)+
+  ylim(0,20000)+
+  labs(title='6-month loan amount and age relationship',y='借款金额(RMB)')
+```
+
+--由上两图可以看出,借款金额和年龄的关系是右偏移的状态,随着年龄的增加,借款金额增加,在25-35岁之间达到最大值,又逐渐下降
+```{r}
+# 通过cor.test 函数计算借款利率和年龄的相关性
+cor.test(paipaidai_new$借款利率,paipaidai_new$年龄,method='pearson')
+```
+--由计算结果可以知晓,相关性是0.04,由相关性计算可以看出,相关性并不是非常明显
+
+```{r}
+# 12.借款利率的多少与那些因素有关呢?
+# 相同期限内,借款金额越高,利率越低吗?
+
+p8 = ggplot(aes(借款金额,借款利率),data=dai_12)+
+  geom_point(alpha=0.2)+
+  xlim(0,20000)+
+   labs(title='12-month loan amount and interest raterelationship',y='借款利率(百分比)')
+p9 = ggplot(aes(借款金额,借款利率),data=dai_6)+
+  geom_point(alpha=0.2)+
+  xlim(0,20000)+
+   labs(title='6-month loan amount and interest raterelationship',y='借款利率(百分比)')
+grid.arrange(p8,p9)
+```
+
+--从上图无法有效的反应出借款金额与借款利率存在反比的关系
+```{r}
+# 13.借款利率是否和期限长短或初始评级(相同期限内)有关呢?
+p10 = ggplot(aes(借款期限,借款利率),data=paipaidai_new)+
+  geom_point(color='orange',breaks = c(0,25,1))+
+  geom_smooth()+
+  labs(y='借款利率(百分比)')
+p11 = ggplot(aes(x_12,借款利率),data=dai_12)+
+  geom_boxplot()+
+  labs(x='初始评级')+
+  labs(title='12-months rating and interest raterelationship',y='借款利率(百分比)')
+p12 = ggplot(aes(x_6,借款利率),data=dai_6)+
+  geom_boxplot()+
+  labs(x='初始评级')+
+  labs(title='6-months rating and interest raterelationship',y='借款利率(百分比)')
+grid.arrange(p10,p11,p12)
+```
+
+-- 从图形可以看出,借款利率随着借款期限的变长,利率在12个月之前有一些下降,但并不明显,期限在大于12个月后,出现的波动很大
+-- 再看初始评级对于利率的影响并没有明显的体现
+
+## 双变量分析
+
+#### 探究的数据集内特性有什么特点呢？
+--由以上分析可以知晓,在相同期限内,年龄的大小对于借款金额的多少有一些影响,其他的并没有太明显的影响
+
+#### 主要特性与其他特性之间有什么关系呢？
+-- 从上诉双变量的分析来看,各变量之间的相关性并不是很明显
+
+#### 上述数据集中最强的关系是什么？
+-- 从上面的图形分析来看,相关性最强的就是借款金额与年龄的分布
+
+
+
+# 多变量绘图选择
+
+```{r}
+# 14. 在相同的借款期限内(12个月或6个月),认证成功的各数量之间借款金额的平均值,中位数是怎样的分布呢?
+num = dai_12 %>%
+  group_by(认证成功数量,初始评级) %>%
+  summarise(
+            num_mean = mean(借款金额),
+            num_median = median(借款金额),
+            n = n()) %>%
+  ungroup() %>%
+  arrange(认证成功数量)
+```
+```{r}
+ggplot(aes(x=认证成功数量,y=num_mean),data=num)+
+  geom_point(aes(color=初始评级))+
+  ylim(0,15000)+
+  geom_smooth()+
+  labs(title='12-month certification number and average relationship')
+```
+```{r}
+num_6 = dai_6 %>%
+  group_by(认证成功数量,初始评级) %>%
+  summarise(
+            num_mean = mean(借款金额),
+            num_median = median(借款金额),
+            n = n()) %>%
+  ungroup() %>%
+  arrange(认证成功数量)
+ggplot(aes(x=认证成功数量,y=num_mean),data=num_6)+
+  geom_point(aes(color=初始评级))+
+  ylim(0,15000)+
+  geom_smooth()+
+  labs(title='6-month certification number and average relationship')
+```
+
+--由上面的两个图形可以看出,不论是借款期为12还是6个月,整体的借款金额平均值都是随着认证成功数量的变大,呈现上升的趋势
+
+```{r}
+#查看中位数分布的情况
+p13 =ggplot(aes(x=认证成功数量,y=num_median),data=num)+
+  geom_point(aes(color=初始评级))+
+  ylim(0,15000)+
+  geom_smooth()+
+  labs(title='12-month certification number and median relationship')
+p14 =ggplot(aes(x=认证成功数量,y=num_median),data=num_6)+
+  geom_point(aes(color=初始评级))+
+  ylim(0,15000)+
+  geom_smooth()+
+  labs(title='6-month certification number and median relationship')
+grid.arrange(p13,p14)
+```
+
+--由中位数的平滑曲线也可以看出,借款金额的中位数随着认证成功数量的增加而增加
+
+## 多变量分析
+
+####  这部分探究中有什么明显的特性？
+--由认证成功的数量的中位数和平均值分布可以看出相互之间存在着正比的关系
+
+#### 特性之间是否存在有趣或惊人的联系呢？
+--通过上面这些图像的分析,可以看出借款金额的多少与借款人认证成功数量是具有一定的相关性的
+
+
+## 总结
+
+### 绘图一
+```{r}
+# 借款金额分布层次(grade列)和认证成功数量的图形
+ggplot(aes(x=grade,y=认证成功数量),data=paipaidai_new)+
+  geom_boxplot()+
+  labs(title = 'Relationship between certification and amount')
+  
+```
+
+### 描述一
+-由箱线图可以看出,借款金额为高等级的在低中阶段的最大值,三分位分布都存在较大的差异
+
+### 绘图二
+```{r}
+# 历史成功借款次数与借款金额
+p15 = ggplot(aes(x=历史成功借款次数,y=借款金额),data=dai_12)+
+  geom_jitter(alpha=0.5)+
+  ylim(1,20000)+
+  xlim(0,75)+
+  geom_smooth()+
+  labs(title='12-month Relationship between the number of borrowings and the amount',y='借款金额(RMB)')
+p16 = ggplot(aes(x=历史成功借款次数,y=借款金额),data=dai_6)+
+  geom_jitter(alpha=0.5)+
+  ylim(1,20000)+
+  xlim(0,75)+
+  geom_smooth()+
+  labs(title='6-month Relationship between the number of borrowings and the amount',y='借款金额(RMB)')
+grid.arrange(p15,p16)
+```
+
+### 描述二
+--上图可以看到,借款次数与金额多少的关系并不明显
+
+### 绘图三
+```{r}
+ggplot(aes(x=年龄),data=paipaidai_new)+
+  geom_bar(breaks=(15:70))+
+  labs(title='Age distribution')
+```
+
+### 描述三
+-- 从年龄上来看,最高峰位于25-30岁,整体呈现由17岁开始不断增加,到25岁达到峰值,再逐渐下降的趋势
